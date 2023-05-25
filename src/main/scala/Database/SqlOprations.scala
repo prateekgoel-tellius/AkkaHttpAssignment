@@ -148,7 +148,7 @@ class SqlOperations(url: String, username: String, password: String) {
 object SqlOperations extends App with SprayJsonSupport with userJsonProtocol {
     private val url = "jdbc:mysql://localhost:3306/HttpAkka"
     private val username = "root"
-    private val password = "Pg.vijay12"
+    private val password = "___13__"
     private val currentDateTime = LocalDateTime.now()
     private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private val currentDateTimeString = currentDateTime.format(formatter)

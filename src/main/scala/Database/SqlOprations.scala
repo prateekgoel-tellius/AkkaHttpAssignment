@@ -19,10 +19,12 @@ trait userJsonProtocol extends DefaultJsonProtocol {
   implicit val userFormat: RootJsonFormat[User] = jsonFormat5(User)
 }
 
+
 class SqlOperations(url: String, username: String, password: String) {
-  val currentDateTime = LocalDateTime.now()
-  val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-  val currentDateTimeString = currentDateTime.format(formatter)
+
+  private val currentDateTime = LocalDateTime.now()
+  private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+  private val currentDateTimeString = currentDateTime.format(formatter)
 
   private def getConnection: Connection =
     DriverManager.getConnection(url, username, password)
@@ -78,7 +80,7 @@ class SqlOperations(url: String, username: String, password: String) {
 
   def updateUserById(userId: Int, updatedUser: User): Option[User] = {
     val connection = getConnection
-    val query = s"UPDATE USERS SET name = '${updatedUser.name}', startTime = '${updatedUser.startTime}', createdAt ='${currentDateTimeString}' WHERE id = $userId"
+    val query = s"UPDATE USERS SET name = '${updatedUser.name}', startTime = '${updatedUser.startTime}', createdAt ='$currentDateTimeString' WHERE id = $userId"
     val statement = connection.createStatement()
     val rowsUpdated = statement.executeUpdate(query)
     if (rowsUpdated == 1) {
@@ -104,16 +106,15 @@ class SqlOperations(url: String, username: String, password: String) {
     preparedStatement.setString(4, newUser.createdAt)
     preparedStatement.setString(5, newUser.password)
     val checkQuery = s"SELECT name FROM USERS WHERE id=${newUser.id}"
-    connection.createStatement().executeQuery(checkQuery).next() match {
-      case false =>
-        preparedStatement.executeUpdate()
-        preparedStatement.close()
-        connection.close()
-        Some(newUser)
-      case _ =>
-        preparedStatement.close()
-        connection.close()
-        None
+    if (connection.createStatement().executeQuery(checkQuery).next()) {
+      preparedStatement.close()
+      connection.close()
+      None
+    } else {
+      preparedStatement.executeUpdate()
+      preparedStatement.close()
+      connection.close()
+      Some(newUser)
     }
   }
 
@@ -156,13 +157,13 @@ object SqlOperations extends App with SprayJsonSupport with userJsonProtocol {
       post{
         entity(as[User]){
           user =>
-            userOperations.validatePassword(user.password) match {
-              case true =>
-                userOperations.addUser(user) match {
-                  case Some(_) => complete(StatusCodes.OK)
-                  case None => complete("User id is already present in the database")
-                }
-              case _ => complete("The password should contain a digit,character, special character and length should be greater than 8")
+            if (userOperations.validatePassword(user.password)) {
+              userOperations.addUser(user) match {
+                case Some(_) => complete(StatusCodes.OK)
+                case None => complete(StatusCodes.BadRequest,"User id is already present in the database")
+              }
+            } else {
+              complete(StatusCodes.NotModified, "The password should contain a digit,character, special character and length should be greater than 8")
             }
 
         }
@@ -171,13 +172,13 @@ object SqlOperations extends App with SprayJsonSupport with userJsonProtocol {
         entity(as[User]) { updatedUser =>
           parameter('id.as[Int]) { userId =>
             val user = User(userId, updatedUser.name, updatedUser.startTime,currentDateTimeString,updatedUser.password)
-            userOperations.validatePassword(user.password) match {
-              case true =>
-                userOperations.updateUserById(userId, user) match {
-                  case Some(_) => complete(StatusCodes.OK)
-                  case None => complete("User id is not found for Update")
-                }
-              case _ => complete("The password should contain a digit,character, special character and length should be greater than 8")
+            if (userOperations.validatePassword(user.password)) {
+              userOperations.updateUserById(userId, user) match {
+                case Some(_) => complete(StatusCodes.OK)
+                case None => complete(StatusCodes.NotFound, "The UserID is not found") // proper status code
+              }
+            } else {
+              complete(StatusCodes.NotModified, "The password should contain a digit,character, special character and length should be greater than 8")
             }
 
           }
@@ -188,15 +189,15 @@ object SqlOperations extends App with SprayJsonSupport with userJsonProtocol {
           //print the user with id as id
           userOperations.findUserById(id) match {
             case Some(user) => complete(user)
-            case None => complete("User id is not found")
+            case None => complete(StatusCodes.NotFound, "The User ID is not found")
           }
         } ~
         entity(as[User]){
-//          print all the users in my database
+//          print all the users in my database1
           user =>
             userOperations.authenticateUser(user) match {
               case Some(_) => complete(userOperations.getAllUsers)
-              case None => complete("Unauthorized User")
+              case None => complete(StatusCodes.Unauthorized)
             }
         }
     }
